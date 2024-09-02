@@ -1,0 +1,58 @@
+name: Deploy Model to Databricks Prod
+
+# Use workflow_dispatch for a manual trigger
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out the repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+
+    - name: Install Databricks CLI and MLflow
+      run: |
+        pip install databricks-cli mlflow
+
+    - name: Configure Databricks CLI for Dev Workspace
+      run: |
+        databricks configure --token <<EOF
+        ${{ secrets.DATABRICKS_DEV_HOST }}
+        ${{ secrets.DATABRICKS_DEV_TOKEN }}
+        EOF
+
+    - name: Export Model from Dev Registry
+      run: |
+        mlflow models download -m models:/YourModelName/latest -d ./model --run-id ${{ secrets.MODEL_RUN_ID }}
+
+    - name: Configure Databricks CLI for Prod Workspace
+      run: |
+        databricks configure --token <<EOF
+        ${{ secrets.DATABRICKS_PROD_HOST }}
+        ${{ secrets.DATABRICKS_PROD_TOKEN }}
+        EOF
+
+    - name: Deploy Model to Prod Workspace
+      run: |
+        # Import model into production workspace
+        databricks workspace import_dir ./model /Workspace/Path/To/Prod/Model --overwrite
+        # Assuming your model is deployed as a job
+        databricks jobs create --json-file job-config.json
+
+    - name: Clean up
+      run: rm -rf ./model
+
+    - name: Notify Success
+      if: success()
+      run: echo "Model successfully deployed to the Databricks Prod environment."
+
+    - name: Notify Failure
+      if: failure()
+      run: echo "Failed to deploy the model to the Databricks Prod environment."
